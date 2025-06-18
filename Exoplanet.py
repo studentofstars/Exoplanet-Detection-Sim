@@ -17,7 +17,7 @@ import google.generativeai as genai
 import time
 
 # Configure the Gemini API
-genai.configure(api_key=st.secrets["gemini_api"]) 
+genai.configure(api_key=st.secrets["api_key"]) 
 # Initialize the model with the correct name
 model = genai.GenerativeModel('gemini-2.0-flash-001')  
 
