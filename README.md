@@ -1,6 +1,7 @@
 # Exoplanet Detection Simulator
 
 This project provides a simulation environment for exoplanet detection techniques, implemented using Python and Streamlit. It helps users understand and visualize various methods used in detecting exoplanets.
+Find the project here: https://exoplanet-detection-sim.streamlit.app/ 
 
 ## Features
 
