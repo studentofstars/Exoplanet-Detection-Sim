@@ -14,6 +14,7 @@ import streamlit as st
 from astropy.constants import G
 from astropy import units as u
 import google.generativeai as genai
+import time
 
 # Configure the Gemini API
 genai.configure(api_key=st.secrets["gemini_api"]) 
@@ -285,31 +286,79 @@ with tab5:
     st.markdown("[Reference Paper for the project](https://arxiv.org/pdf/2404.09143)") 
     
 
+@st.cache_data(ttl=3600)  # Cache responses for 1 hour
+def get_gemini_response(prompt):
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            # Create a more focused prompt with context
+            full_prompt = f"""As an expert in exoplanetary science, please answer the following question:
+            {prompt}
+            
+            Please provide a clear, scientific explanation using established astronomical concepts and current research.
+            If relevant, include references to NASA's exoplanet database or recent discoveries."""
+            
+            # Set generation config for better responses
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.7,
+                top_p=0.8,
+                top_k=40,
+                max_output_tokens=2048,
+            )
+            
+            # Generate the response with the configured settings
+            response = model.generate_content(
+                full_prompt,
+                generation_config=generation_config,
+                safety_settings=[
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                ]
+            )
+            
+            return response.text
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                continue
+            raise e
+
 with tab6:
     st.header("Ask Gemini Anything About Exoplanets")
+    
+    # Add some example questions
+    st.markdown("""
+    ### Example questions you can ask:
+    - What is the radial velocity method of detecting exoplanets?
+    - How do scientists determine if an exoplanet is in the habitable zone?
+    - What are hot Jupiters and why are they important?
+    - How do transit observations help in detecting exoplanets?
+    """)
 
-    user_prompt = st.text_input("Enter your prompt:")
+    user_prompt = st.text_input("Enter your question about exoplanets:")
 
-    if st.button("Submit"):
+    if st.button("Ask Gemini"):
         if user_prompt:
             try:
-                # Create a prompt that includes context about exoplanets
-                full_prompt = f"Question about exoplanets: {user_prompt}\nPlease provide a clear and scientific explanation."
-                
-                # Generate the response using the Gemini model
-                response = model.generate_content(full_prompt)
-                
-                # Display the response
-                if response.text:
+                with st.spinner('Generating response...'):
+                    response = get_gemini_response(user_prompt)
+                    
+                if response:
                     st.write("Gemini's Response:")
-                    st.markdown(response.text)
+                    st.markdown(response)
                 else:
-                    st.error("No response generated. Please try again.")
+                    st.error("No response generated. Please try again with a different question.")
             
             except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+                st.error(f"An error occurred while getting the response. Please try again in a moment. Error: {str(e)}")
+                st.info("If the error persists, try refreshing the page or asking a different question.")
         else:
-            st.warning("Please enter a prompt before submitting.")
+            st.warning("Please enter a question before submitting.")
 
 
 
