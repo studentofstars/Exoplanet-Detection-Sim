@@ -15,6 +15,7 @@ from astropy.constants import G
 from astropy import units as u
 import google.generativeai as genai
 import time
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
 # Configure the Gemini API
 genai.configure(api_key=st.secrets["api_key"]) 
@@ -22,7 +23,7 @@ genai.configure(api_key=st.secrets["api_key"])
 model = genai.GenerativeModel('gemini-2.0-flash-001')  
 
 # Step 1: Fetch Exoplanet Data from NASA Exoplanet Archive
-@st.cache_data
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def fetch_exoplanet_data(limit=10000):
     url = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
     query = f"""
@@ -39,10 +40,10 @@ def fetch_exoplanet_data(limit=10000):
     FROM
         ps
     WHERE
-        pl_bmasse > 0 AND
-        pl_orbper > 0 AND
-        pl_orbsmax > 0 AND
-        st_mass > 0
+        pl_bmasse IS NOT NULL AND
+        pl_orbper IS NOT NULL AND
+        pl_orbsmax IS NOT NULL AND
+        st_mass IS NOT NULL
     ORDER BY
         pl_orbper ASC
     """
@@ -51,13 +52,26 @@ def fetch_exoplanet_data(limit=10000):
         "format": "json"
     }
 
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        df = pd.DataFrame(data)
-        return df
-    else:
-        st.error("Error fetching data from NASA Exoplanet Archive.")
+    try:
+        response = requests.get(url, params=params, timeout=10)  # Add timeout
+        if response.status_code == 200:
+            data = response.json()
+            df = pd.DataFrame(data)
+            
+            # Convert numeric columns immediately
+            numeric_columns = ['pl_bmasse', 'pl_orbper', 'pl_orbsmax', 'pl_orbeccen', 'st_mass', 'st_teff', 'pl_rade']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Drop NA rows immediately
+            df = df.dropna(subset=['pl_bmasse', 'pl_orbper', 'pl_orbsmax', 'st_mass'])
+            return df
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching data: {str(e)}")
+        return None
+    except Exception as e:
+        st.error(f"Error processing data: {str(e)}")
         return None
 
 # Step 2: Calculate Radial Velocity Amplitude (K)
@@ -286,50 +300,46 @@ with tab5:
     st.markdown("[Reference Paper for the project](https://arxiv.org/pdf/2404.09143)") 
     
 
-@st.cache_data(ttl=3600)  # Cache responses for 1 hour
-def get_gemini_response(prompt):
-    max_retries = 3
-    retry_delay = 1
-    
-    for attempt in range(max_retries):
-        try:
-            # Create a more focused prompt with context
-            full_prompt = f"""As an expert in exoplanetary science, please answer the following question:
-            {prompt}
-            
-            Please provide a clear, scientific explanation using established astronomical concepts and current research.
-            If relevant, include references to NASA's exoplanet database or recent discoveries."""
-            
-            # Set generation config for better responses
-            generation_config = genai.types.GenerationConfig(
-                temperature=0.7,
-                top_p=0.8,
-                top_k=40,
-                max_output_tokens=208,
-            )
-            
-            # Generate the response with the configured settings
-            response = model.generate_content(
-                full_prompt,
-                generation_config=generation_config,
-                safety_settings=[
-                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-                ]
-            )
-            
-            return response.text
-            
-        except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
-                continue
-            raise e
+
+
+# Simple cached function for Gemini responses
+@st.cache_data(ttl=3600)
+def get_ai_response(query: str) -> str:
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash-001')
+        prompt = f"""As an expert in exoplanetary science, provide a detailed and comprehensive answer to: {query}
+        
+        Include relevant scientific concepts, examples, and explanations where appropriate. Format the response with proper markdown for readability."""
+        
+        response = model.generate_content(prompt)
+        return response.text if response else None
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+# Simple function to analyze a specific exoplanet
+@st.cache_data(ttl=3600)
+def analyze_planet(planet_data):
+    try:
+        model = genai.GenerativeModel('gemini-pro')
+        planet_info = f"""
+        Planet Name: {planet_data['pl_name']}
+        Host Star: {planet_data['hostname']}
+        Planet Mass (Earth masses): {planet_data['pl_bmasse']:.2f}
+        Orbital Period (days): {planet_data['pl_orbper']:.2f}
+        Semi-major Axis (AU): {planet_data['pl_orbsmax']:.2f}
+        Star Mass (Solar masses): {planet_data['st_mass']:.2f}
+        """
+        
+        prompt = f"Analyze this exoplanet data and explain its key features in about 100 words:\n{planet_info}"
+        response = model.generate_content(prompt)
+        return response.text if response else None
+    except Exception as e:
+        return f"Error analyzing planet: {str(e)}"
+
 
 with tab6:
-    st.header("Ask Gemini Anything About Exoplanets")
+    st.header("Ask AI About Exoplanets")
     
     # Add some example questions
     st.markdown("""
@@ -339,26 +349,17 @@ with tab6:
     - What are hot Jupiters and why are they important?
     - How do transit observations help in detecting exoplanets?
     """)
-
-    user_prompt = st.text_input("Enter your question about exoplanets:")
-
-    if st.button("Ask Gemini"):
-        if user_prompt:
-            try:
-                with st.spinner('Generating response...'):
-                    response = get_gemini_response(user_prompt)
-                    
-                if response:
-                    st.write("Gemini's Response:")
-                    st.markdown(response)
-                else:
-                    st.error("No response generated. Please try again with a different question.")
-            
-            except Exception as e:
-                st.error(f"An error occurred while getting the response. Please try again in a moment. Error: {str(e)}")
-                st.info("If the error persists, try refreshing the page or asking a different question.")
-        else:
-            st.warning("Please enter a question before submitting.")
-
-
+    
+    # Simple query interface
+    query = st.text_input("Enter your question about exoplanets:")
+    
+    if query:
+        # Use the cached function to get response
+        response = get_ai_response(query)
+        
+        if response and not response.startswith("Error"):
+            st.markdown(response)
+        elif response:
+            st.error(response)
+            st.info("Please try a different question or try again later.")
 
