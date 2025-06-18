@@ -35,8 +35,8 @@ chmod +x setup.sh
 
 Create a `.streamlit/secrets.toml` file with the following structure:
 ```toml
-[nasa_api]
-api_key = "your-nasa-api-key"
+[api_key]
+api_key = "your-api-key"
 
 [simulation]
 default_star_mass = 1.0
