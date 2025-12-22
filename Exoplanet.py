@@ -380,7 +380,7 @@ with tab6:
     
     # Example questions
     st.markdown("""
-    ### 💡 Example questions:
+    ### Example questions:
     - What is the radial velocity method of detecting exoplanets?
     - How do scientists determine if an exoplanet is in the habitable zone?
     - What are hot Jupiters and why are they important?
@@ -392,12 +392,12 @@ with tab6:
     user_query = st.text_input("🔍 Enter your question about exoplanets:", 
                                 placeholder="Ask anything about exoplanets...")
 
-    if st.button("🚀 Ask AI", type="primary"):
+    if st.button("Ask AI", type="primary"):
         if user_query:
-            with st.spinner('🔄 Generating response...'):
+            with st.spinner('Generating response...'):
                 response = get_ai_response(user_query)
                 
-                st.write("### 🤖 AI Response:")
+                st.write("### AI Response:")
                 st.markdown(response)
                 
                 # Add feedback buttons
@@ -407,8 +407,8 @@ with tab6:
                 with col2:
                     st.button("👎 Not helpful")
         else:
-            st.warning("⚠️ Please enter a question before submitting.")
+            st.warning("Please enter a question before submitting.")
     
     # Add disclaimer
-    st.caption("💡 Powered by Groq (Llama 3.3 70B) • Responses are AI-generated and should be verified with scientific sources.")
+    st.caption("Powered by Groq (Llama 3.3 70B) • Responses are AI-generated and should be verified with scientific sources.")
 
