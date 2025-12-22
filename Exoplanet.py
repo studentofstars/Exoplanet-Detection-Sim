@@ -316,18 +316,18 @@ with tab5:
 
 
 # Groq AI response function with rate limiting
-@st.cache_data(ttl=3600)
 def get_ai_response(query: str) -> str:
     if not groq_client:
         return "⚠️ AI Assistant is currently unavailable. Please configure the GROQ_API_KEY."
     
     try:
         # Rate limiting: Max 1 request per 2 seconds
-        current_time = time.time()
+        import time as time_module  # Import with alias to avoid any conflicts
+        current_time = time_module.time()
         time_since_last = current_time - st.session_state.last_request_time
         
         if time_since_last < 2:  # Wait at least 2 seconds between requests
-            time.sleep(2 - time_since_last)
+            time_module.sleep(2 - time_since_last)
         
         chat_completion = groq_client.chat.completions.create(
             messages=[
@@ -349,7 +349,7 @@ def get_ai_response(query: str) -> str:
             top_p=0.9,
         )
         
-        st.session_state.last_request_time = time.time()
+        st.session_state.last_request_time = time_module.time()
         st.session_state.request_count += 1
         
         return chat_completion.choices[0].message.content
@@ -374,12 +374,13 @@ with tab6:
         st.metric("Questions Asked (This Session)", st.session_state.request_count)
     with col2:
         if st.session_state.last_request_time > 0:
-            seconds_ago = int(time.time() - st.session_state.last_request_time)
+            import time as time_module
+            seconds_ago = int(time_module.time() - st.session_state.last_request_time)
             st.metric("Last Question", f"{seconds_ago}s ago")
     
     # Example questions
     st.markdown("""
-    ### Example questions:
+    ### 💡 Example questions:
     - What is the radial velocity method of detecting exoplanets?
     - How do scientists determine if an exoplanet is in the habitable zone?
     - What are hot Jupiters and why are they important?
@@ -388,15 +389,15 @@ with tab6:
     - How does eccentricity affect a planet's orbit?
     """)
 
-    user_query = st.text_input("Enter your question about exoplanets:", 
+    user_query = st.text_input("🔍 Enter your question about exoplanets:", 
                                 placeholder="Ask anything about exoplanets...")
 
-    if st.button("Ask AI", type="primary"):
+    if st.button("🚀 Ask AI", type="primary"):
         if user_query:
-            with st.spinner('Generating response...'):
+            with st.spinner('🔄 Generating response...'):
                 response = get_ai_response(user_query)
                 
-                st.write("### AI Response:")
+                st.write("### 🤖 AI Response:")
                 st.markdown(response)
                 
                 # Add feedback buttons
