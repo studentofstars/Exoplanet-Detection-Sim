@@ -366,7 +366,7 @@ def get_ai_response(query: str) -> str:
 
 
 with tab6:
-    st.header("🤖 Ask AI About Exoplanets")
+    st.header("Ask AI About Exoplanets")
     
     # Display usage stats
     col1, col2 = st.columns(2)
@@ -389,10 +389,15 @@ with tab6:
     - How does eccentricity affect a planet's orbit?
     """)
 
-    user_query = st.text_input("🔍 Enter your question about exoplanets:", 
-                                placeholder="Ask anything about exoplanets...")
-
-    if st.button("Ask AI", type="primary"):
+    # Use form to allow Enter key submission
+    with st.form(key="ai_question_form", clear_on_submit=False):
+        user_query = st.text_input("Enter your question about exoplanets:", 
+                                    placeholder="Ask anything about exoplanets...",
+                                    key="question_input")
+        
+        submit_button = st.form_submit_button("Ask AI", type="primary")
+    
+    if submit_button:
         if user_query:
             with st.spinner('Generating response...'):
                 response = get_ai_response(user_query)
