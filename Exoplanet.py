@@ -2,7 +2,7 @@
 # This code fetches data from the NASA Exoplanet Archive, calculates radial velocity curves,
 # visualizes the data in 3D, and allows users to interact with the data using Streamlit.
 # Required Libraries
-# pip install streamlit plotly pandas numpy requests astropy google-generativeai
+# pip install streamlit plotly pandas numpy requests astropy groq
 
 # Import necessary libraries   
 import requests
@@ -13,14 +13,22 @@ import plotly.express as px
 import streamlit as st
 from astropy.constants import G
 from astropy import units as u
-import google.generativeai as genai
+from groq import Groq
 import time
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+import os
 
-# Configure the Gemini API
-genai.configure(api_key=st.secrets["api_key"]) 
-# Initialize the model with the correct name
-model = genai.GenerativeModel('gemini-2.0-flash-001')  
+# Configure Groq API
+groq_api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", "")
+if groq_api_key:
+    groq_client = Groq(api_key=groq_api_key)
+else:
+    groq_client = None
+
+# Initialize session state for rate limiting
+if 'last_request_time' not in st.session_state:
+    st.session_state.last_request_time = 0
+if 'request_count' not in st.session_state:
+    st.session_state.request_count = 0  
 
 # Step 1: Fetch Exoplanet Data from NASA Exoplanet Archive
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -93,9 +101,9 @@ def calculate_radial_velocity(planet_mass, star_mass, orbital_period, eccentrici
 
 # Step 3: Generate Radial Velocity Curve
 def generate_radial_velocity_curve(K, P, time_span):
-    time = np.linspace(0, time_span, 1000)  # Time points (days)
-    velocity = K * np.sin(2 * np.pi * time / P)  # Radial velocity at each time point
-    return time, velocity
+    time_points = np.linspace(0, time_span, 1000)  # Time points (days)
+    velocity = K * np.sin(2 * np.pi * time_points / P)  # Radial velocity at each time point
+    return time_points, velocity
 #Step 4: Calculate habitable zone
 def calculate_habitable_zone(star_teff): # Constants for habitable zone calculation (Kopparapu et al. 2014) 
     S_eff_sun = np.array([1.776, 0.320]) 
@@ -106,8 +114,13 @@ def calculate_habitable_zone(star_teff): # Constants for habitable zone calculat
     T_sun = 5778 # Effective temperature of the sun 
     L = (star_teff / T_sun)**4 # Luminosity of the star in terms of solar luminosity
     # Calculate the inner and outer boundaries of the habitable zone 
-    r_inner = np.sqrt(L / (S_eff_sun[0] + a[0] * (T_star - T_sun) + b[0] * (T_star - T_sun)**2 + c[0] * (T_star - T_sun)**3))
-    r_outer = np.sqrt(L / (S_eff_sun[1] + a[1] * (T_star - T_sun) + b[1] * (T_star - T_sun)**2 + c[1] * (T_star - T_sun)**3)) 
+    denominator_inner = S_eff_sun[0] + a[0] * (T_star - T_sun) + b[0] * (T_star - T_sun)**2 + c[0] * (T_star - T_sun)**3
+    denominator_outer = S_eff_sun[1] + a[1] * (T_star - T_sun) + b[1] * (T_star - T_sun)**2 + c[1] * (T_star - T_sun)**3
+    # Ensure denominators are positive to avoid sqrt of negative numbers
+    denominator_inner = np.maximum(denominator_inner, 1e-10)
+    denominator_outer = np.maximum(denominator_outer, 1e-10)
+    r_inner = np.sqrt(L / denominator_inner)
+    r_outer = np.sqrt(L / denominator_outer)
     return r_inner, r_outer
     
 
@@ -302,64 +315,99 @@ with tab5:
 
 
 
-# Simple cached function for Gemini responses
+# Groq AI response function with rate limiting
 @st.cache_data(ttl=3600)
 def get_ai_response(query: str) -> str:
+    if not groq_client:
+        return "⚠️ AI Assistant is currently unavailable. Please configure the GROQ_API_KEY."
+    
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash-001')
-        prompt = f"""As an expert in exoplanetary science, provide a detailed and comprehensive answer to: {query}
+        # Rate limiting: Max 1 request per 2 seconds
+        current_time = time.time()
+        time_since_last = current_time - st.session_state.last_request_time
         
-        Include relevant scientific concepts, examples, and explanations where appropriate. Format the response with proper markdown for readability."""
+        if time_since_last < 2:  # Wait at least 2 seconds between requests
+            time.sleep(2 - time_since_last)
         
-        response = model.generate_content(prompt)
-        return response.text if response else None
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert in exoplanetary science. 
+                    Provide clear, concise scientific explanations using established astronomical concepts 
+                    and current research. Reference NASA's exoplanet database when relevant.
+                    Keep responses under 500 words and format with proper markdown for readability."""
+                },
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            model="llama-3.3-70b-versatile",  # Fast and accurate
+            temperature=0.7,
+            max_tokens=800,
+            top_p=0.9,
+        )
+        
+        st.session_state.last_request_time = time.time()
+        st.session_state.request_count += 1
+        
+        return chat_completion.choices[0].message.content
+    
     except Exception as e:
-        return f"Error: {str(e)}"
-
-
-# Simple function to analyze a specific exoplanet
-@st.cache_data(ttl=3600)
-def analyze_planet(planet_data):
-    try:
-        model = genai.GenerativeModel('gemini-pro')
-        planet_info = f"""
-        Planet Name: {planet_data['pl_name']}
-        Host Star: {planet_data['hostname']}
-        Planet Mass (Earth masses): {planet_data['pl_bmasse']:.2f}
-        Orbital Period (days): {planet_data['pl_orbper']:.2f}
-        Semi-major Axis (AU): {planet_data['pl_orbsmax']:.2f}
-        Star Mass (Solar masses): {planet_data['st_mass']:.2f}
-        """
+        error_msg = str(e)
         
-        prompt = f"Analyze this exoplanet data and explain its key features in about 100 words:\n{planet_info}"
-        response = model.generate_content(prompt)
-        return response.text if response else None
-    except Exception as e:
-        return f"Error analyzing planet: {str(e)}"
+        # Handle rate limit errors gracefully
+        if "rate_limit" in error_msg.lower() or "429" in error_msg:
+            return "⚠️ Too many requests. Please wait a moment and try again."
+        
+        # Handle other errors
+        return f"❌ Error: {error_msg}\n\nPlease try again or rephrase your question."
 
 
 with tab6:
-    st.header("Ask AI About Exoplanets")
+    st.header("🤖 Ask AI About Exoplanets")
     
-    # Add some example questions
+    # Display usage stats
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Questions Asked (This Session)", st.session_state.request_count)
+    with col2:
+        if st.session_state.last_request_time > 0:
+            seconds_ago = int(time.time() - st.session_state.last_request_time)
+            st.metric("Last Question", f"{seconds_ago}s ago")
+    
+    # Example questions
     st.markdown("""
-    ### Example questions you can ask:
+    ### 💡 Example questions:
     - What is the radial velocity method of detecting exoplanets?
     - How do scientists determine if an exoplanet is in the habitable zone?
     - What are hot Jupiters and why are they important?
     - How do transit observations help in detecting exoplanets?
+    - What is the difference between super-Earths and mini-Neptunes?
+    - How does eccentricity affect a planet's orbit?
     """)
+
+    user_query = st.text_input("🔍 Enter your question about exoplanets:", 
+                                placeholder="Ask anything about exoplanets...")
+
+    if st.button("🚀 Ask AI", type="primary"):
+        if user_query:
+            with st.spinner('🔄 Generating response...'):
+                response = get_ai_response(user_query)
+                
+                st.write("### 🤖 AI Response:")
+                st.markdown(response)
+                
+                # Add feedback buttons
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    st.button("👍 Helpful")
+                with col2:
+                    st.button("👎 Not helpful")
+        else:
+            st.warning("⚠️ Please enter a question before submitting.")
     
-    # Simple query interface
-    query = st.text_input("Enter your question about exoplanets:")
-    
-    if query:
-        # Use the cached function to get response
-        response = get_ai_response(query)
-        
-        if response and not response.startswith("Error"):
-            st.markdown(response)
-        elif response:
-            st.error(response)
-            st.info("Please try a different question or try again later.")
+    # Add disclaimer
+    st.caption("💡 Powered by Groq (Llama 3.3 70B) • Responses are AI-generated and should be verified with scientific sources.")
 
