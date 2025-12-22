@@ -180,10 +180,10 @@ with tab1:
 
                 # Generate radial velocity curve
                 time_span = orbital_period * 2
-                time, velocity = generate_radial_velocity_curve(K, orbital_period, time_span)
+                time_points, velocity = generate_radial_velocity_curve(K, orbital_period, time_span)
 
                 # Add the curve to the Plotly figure
-                fig.add_trace(go.Scatter(x=time, y=velocity, mode='lines', name=f'{planet_name} ({star_name})'))
+                fig.add_trace(go.Scatter(x=time_points, y=velocity, mode='lines', name=f'{planet_name} ({star_name})'))
 
             fig.update_layout(title='Radial Velocity Curves', xaxis_title='Time (days)', yaxis_title='Radial Velocity (m/s)')
             st.plotly_chart(fig)
@@ -379,7 +379,7 @@ with tab6:
     
     # Example questions
     st.markdown("""
-    ### 💡 Example questions:
+    ### Example questions:
     - What is the radial velocity method of detecting exoplanets?
     - How do scientists determine if an exoplanet is in the habitable zone?
     - What are hot Jupiters and why are they important?
@@ -388,15 +388,15 @@ with tab6:
     - How does eccentricity affect a planet's orbit?
     """)
 
-    user_query = st.text_input("🔍 Enter your question about exoplanets:", 
+    user_query = st.text_input("Enter your question about exoplanets:", 
                                 placeholder="Ask anything about exoplanets...")
 
-    if st.button("🚀 Ask AI", type="primary"):
+    if st.button("Ask AI", type="primary"):
         if user_query:
-            with st.spinner('🔄 Generating response...'):
+            with st.spinner('Generating response...'):
                 response = get_ai_response(user_query)
                 
-                st.write("### 🤖 AI Response:")
+                st.write("### AI Response:")
                 st.markdown(response)
                 
                 # Add feedback buttons
