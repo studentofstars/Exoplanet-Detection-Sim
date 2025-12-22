@@ -10,5 +10,5 @@ python-dotenv>=1.0.0
 scikit-learn>=1.4.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
-google-generativeai>=0.3.0
+groq>=0.4.0
 tenacity>=8.2.0
