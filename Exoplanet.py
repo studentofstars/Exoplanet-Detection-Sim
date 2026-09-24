@@ -346,7 +346,7 @@ def get_ai_response(query: str) -> str:
             model="openai/gpt-oss-120b", # Fast and accurate
             temperature=0.7,
             max_completion_tokens=1200,
-            reasoning_effort="medium"
+            reasoning_effort="medium",
             top_p=0.9,
         )
         st.session_state.last_request_time = time_module.time()
