@@ -415,5 +415,5 @@ with tab6:
             st.warning("Please enter a question before submitting.")
     
     # Add disclaimer
-    st.caption("Powered by Groq (Llama 3.3 70B) • Responses are AI-generated and should be verified with scientific sources.")
+    st.caption("Powered by Groq (GPT-OSS-120B) • Responses are AI-generated and should be verified with scientific sources.")
 
