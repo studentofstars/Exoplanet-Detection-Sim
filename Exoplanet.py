@@ -343,7 +343,7 @@ def get_ai_response(query: str) -> str:
                     "content": query
                 }
             ],
-            model="gpt-oss-120b"  # Fast and accurate
+            model="openai/gpt-oss-120b", # Fast and accurate
             temperature=0.7,
             max_completion_tokens=1200,
             reasoning_effort="medium"
